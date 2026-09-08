@@ -21,7 +21,7 @@ extension Metadata {
     ///
     /// Setting it replaces rather than adds: a second `authorization` entry would leave which
     /// one the receiver reads down to ordering, and the server side takes the first.
-    package var bearer: String? {
+    public var bearer: String? {
         get {
             guard let authorization = self[stringValues: "authorization"].first() else {
                 return nil

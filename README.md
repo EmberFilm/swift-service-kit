@@ -6,7 +6,7 @@ that hands a use case exactly the repositories it may touch, and a caller you ca
 It holds no domain types. You bring your own claims, your own repositories, your own rules.
 
 ```swift
-.package(url: "https://github.com/EmberFilm/swift-service-kit.git", from: "0.1.0"),
+.package(url: "https://github.com/EmberFilm/swift-service-kit.git", from: "0.2.0"),
 ```
 
 ## Products
@@ -15,6 +15,7 @@ It holds no domain types. You bring your own claims, your own repositories, your
 | --- | --- | --- |
 | `Persistence` | — | `Database` — the transaction boundary and the scope it hands over |
 | `PostgresPersistence` | PostgresNIO | the Postgres driver, plus row-level-security session variables |
+| `PersistenceTesting` | — | `MockDatabase` — a `Database` with no transaction and a fixed scope, for use-case tests |
 | `Authentication` | jwt-kit | `TokenSigner`, `TokenVerifier`, and `AuthenticationContext<Payload>` |
 | `GRPCAuthentication` | grpc-swift-2 | interceptors that bind the caller on the way in and resend the token on the way out |
 | `HTTPAuthentication` | hummingbird-auth | the same for Hummingbird |
@@ -154,18 +155,14 @@ package struct PostgresAppScope: PostgresScope, PublishPostUseCaseScope {
 }
 ```
 
-The connection never leaves the scope. Substituting a fake needs no seam invented for testing:
+The connection never leaves the scope. Substituting a fake needs no seam invented for testing —
+`PersistenceTesting` ships one:
 
 ```swift
-struct MockDatabase<Scope: Sendable>: Database {
-    let scope: Scope
+import PersistenceTesting
 
-    func withTransaction<T: Sendable>(
-        _ operation: @Sendable (Scope) async throws -> T
-    ) async throws -> T {
-        try await operation(scope)
-    }
-}
+let database = MockDatabase(scope: MockAppScope(postRepository: repository))
+try await PublishPostUseCase(database: database)(input: input)
 ```
 
 ### Why there is no connection path

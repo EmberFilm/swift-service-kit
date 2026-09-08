@@ -16,6 +16,10 @@ let package = Package(
             targets: ["PostgresPersistence"]
         ),
         .library(
+            name: "PersistenceTesting",
+            targets: ["PersistenceTesting"]
+        ),
+        .library(
             name: "Authentication",
             targets: ["Authentication"]
         ),
@@ -52,6 +56,12 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "PostgresNIO", package: "postgres-nio"),
             ]
+        ),
+        // For a use-case test: a `Database` with no transaction and a fixed scope. Its own product
+        // so a service's core target never links it by accident.
+        .target(
+            name: "PersistenceTesting",
+            dependencies: ["Persistence"]
         ),
         .target(
             name: "Authentication",
