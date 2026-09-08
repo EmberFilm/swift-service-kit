@@ -1,0 +1,72 @@
+//
+//  ServerTokenAuthenticationInterceptor.swift
+//  swift-service-kit
+//
+//  Created by Zaid Rahhawi on 8/20/26.
+//
+
+import Authentication
+import JWTKit
+import GRPCCore
+
+/// Identifies the caller of an RPC from its bearer token, without requiring there to be one.
+///
+/// Apply it to every RPC. It binds the app's task-local when a token is present and leaves it
+/// `nil` when there is none, which is what an unprotected RPC needs — registration and login
+/// mint the first token and have no caller yet. Insisting on a caller is a separate decision,
+/// left to the handler that needs one: it reads the task-local and refuses with
+/// `RPCError(code: .unauthenticated)` when nothing is bound. That is the same split as
+/// ``TokenAuthenticationMiddleware`` and `IsAuthenticatedMiddleware` on the HTTP side — identifying a caller
+/// and requiring one are not the same job.
+///
+/// A token that is present but does not verify is refused rather than read as anonymous: absent and
+/// invalid are not the same thing, and downgrading the second would turn an expired token into a
+/// silent loss of privileges on an unprotected RPC.
+///
+/// The encoded token is bound alongside the payload because a handler has no way to reach it:
+/// `ServerContext` carries the method descriptor and the peers, not the request metadata.
+/// ``ClientTokenPropagationInterceptor`` reads it back when the handler calls another service.
+public struct ServerTokenAuthenticationInterceptor<Payload: JWTPayload>: ServerInterceptor {
+    private let verifier: TokenVerifier<Payload>
+    private let authentication: TaskLocal<AuthenticationContext<Payload>?>
+
+    /// - Parameters:
+    ///   - verifier: Reads the token with the public key.
+    ///   - authentication: The app's task-local, bound for the length of each call that carries a token.
+    public init(
+        verifier: TokenVerifier<Payload>,
+        authentication: TaskLocal<AuthenticationContext<Payload>?>
+    ) {
+        self.verifier = verifier
+        self.authentication = authentication
+    }
+
+    public func intercept<Input: Sendable, Output: Sendable>(
+        request: StreamingServerRequest<Input>,
+        context: ServerContext,
+        next:
+            @Sendable (
+                _ request: StreamingServerRequest<Input>,
+                _ context: ServerContext
+            ) async throws -> StreamingServerResponse<Output>
+    ) async throws -> StreamingServerResponse<Output> {
+        guard let token = request.metadata.bearer else {
+            return try await next(request, context)
+        }
+
+        let payload = try await verify(token)
+        let authentication = AuthenticationContext(payload: payload, token: token)
+
+        return try await self.authentication.withValue(authentication) {
+            return try await next(request, context)
+        }
+    }
+
+    private func verify(_ token: String) async throws -> Payload {
+        do {
+            return try await verifier.verify(token: token)
+        } catch {
+            throw RPCError(code: .unauthenticated, message: "Invalid or expired token.")
+        }
+    }
+}

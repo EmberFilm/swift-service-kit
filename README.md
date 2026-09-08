@@ -1,48 +1,138 @@
-# swift-persistence
+# swift-service-kit
 
-How a unit of work reaches its storage, and nothing else. It holds no domain types and knows
-nothing about the app around it — you bring your own scopes and repositories.
+The two things every backend service needs and neither framework gives you: a transaction boundary
+that hands a use case exactly the repositories it may touch, and a caller you can authorize against.
 
-Nothing here assumes a service, a transport, or a network. A CLI and an app get the same benefit as
-an RPC server: the code that does the work never holds a connection.
+It holds no domain types. You bring your own claims, your own repositories, your own rules.
 
 ```swift
-.package(url: "https://github.com/EmberFilm/swift-persistence.git", from: "0.1.0"),
+.package(url: "https://github.com/EmberFilm/swift-service-kit.git", from: "0.1.0"),
 ```
 
 ## Products
 
 | Product | Depends on | For |
 | --- | --- | --- |
-| `Persistence` | — | `Database` — the transaction boundary and the scope it hands over. |
-| `PersistencePostgres` | `Persistence`, PostgresNIO | `PostgresDatabase`, `PostgresScope`, `Session`, `SessionVariable`, `SessionBuilder`. |
+| `Persistence` | — | `Database` — the transaction boundary and the scope it hands over |
+| `PostgresPersistence` | PostgresNIO | the Postgres driver, plus row-level-security session variables |
+| `Authentication` | jwt-kit | `TokenSigner`, `TokenVerifier`, and `AuthenticationContext<Payload>` |
+| `GRPCAuthentication` | grpc-swift-2 | interceptors that bind the caller on the way in and resend the token on the way out |
+| `HTTPAuthentication` | hummingbird-auth | the same for Hummingbird |
 
-`Persistence` carries no dependencies at all, so a domain target links it without pulling a
-database driver in behind it. Only the persistence target links `PersistencePostgres`.
+Link only what you use. `Persistence` and `Authentication` have no transport dependency at all, so
+a domain target links them without pulling gRPC or a database driver in behind it.
 
-## Database
+## Authentication
+
+A caller proves who they are with a bearer token. One service holds the private key and mints
+tokens with `TokenSigner`; every other service holds the public key and reads them with
+`TokenVerifier`. Tokens are EdDSA-signed.
+
+### The token shape is yours
+
+The kit never reads your claims. It asks only for a `JWTPayload`, and leaves which claims to
+enforce to the payload's own `verify(using:)`:
 
 ```swift
-public protocol Database<Scope>: Sendable {
-    associatedtype Scope: Sendable
+struct AppToken: JWTPayload {
+    let subject: SubjectClaim
+    let role: String
+    let expiration: ExpirationClaim
 
-    func withTransaction<T: Sendable>(
-        _ operation: @Sendable (Scope) async throws -> T
-    ) async throws -> T
+    func verify(using algorithm: some JWTAlgorithm) throws {
+        try expiration.verifyNotExpired()
+    }
 }
 ```
 
-A **scope** is what one unit of work may reach — the repositories, and nothing else. The domain
-declares one scope per use case; a use case is generic over its database and constrains the scope,
-so it can only reach what it asked for, and the compiler is what says so rather than a review.
+### What a call proved, for the length of the call
+
+`AuthenticationContext<Payload>` is the verified payload together with the encoded token that
+proved it, bound to the task so a handler can reach the caller without threading it through every
+signature. The app declares where it lives, with an ordinary task-local:
 
 ```swift
-// Domain layer — no driver in sight.
+enum Caller {
+    @TaskLocal static var current: AuthenticationContext<AppToken>?
+}
+```
+
+A generic type cannot hold a stored static, so the task-local is the app's rather than the kit's.
+The interceptors receive it the same way they receive the verifier, and everything else — reading
+it, binding it in a test — is the standard library's `TaskLocal` API.
+
+### Binding the caller
+
+The interceptors and middleware identify a caller without requiring one. A request carrying no
+token continues anonymously, which is what an open route needs — logging in and registering mint
+the first token and have no caller yet. A token that is present but does not verify is refused
+rather than read as anonymous, because absent and invalid are not the same thing.
+
+For gRPC:
+
+```swift
+let verifier = await TokenVerifier<AppToken>(publicKey: publicKey)
+
+GRPCServer(
+    transport: transport,
+    services: [service],
+    interceptors: [
+        ServerTokenAuthenticationInterceptor(verifier: verifier, authentication: Caller.$current)
+    ]
+)
+```
+
+For Hummingbird, on a router whose context conforms to `AuthRequestContext` with `AppToken` as its
+identity:
+
+```swift
+router.add(middleware: TokenAuthenticationMiddleware<AppRequestContext>(verifier: verifier, authentication: Caller.$current))
+```
+
+The Hummingbird middleware sets both the request context's `identity`, which
+`IsAuthenticatedMiddleware` and route handlers read, and the task-local.
+
+### Insisting on a caller
+
+Requiring a caller is the handler's decision, not the interceptor's:
+
+```swift
+guard let authentication = Caller.current else {
+    throw RPCError(code: .unauthenticated, message: "Sign in to continue.")
+}
+
+let caller = authentication.payload
+```
+
+On the HTTP side, add `IsAuthenticatedMiddleware` to the protected routes.
+
+### Calling onward as the same caller
+
+`ClientTokenPropagationInterceptor` reads the same task-local and puts the token back on the outgoing
+call, so one token identifies the caller at every service in the chain. Register it on the
+`GRPCClient` so a service cannot forget it:
+
+```swift
+GRPCClient(transport: transport, interceptors: [
+    ClientTokenPropagationInterceptor(authentication: Caller.$current)
+])
+```
+
+Calls made outside a caller's request — startup work, a workflow activity — go out unauthenticated
+rather than failing. A process that must identify itself on such calls needs a credential of its
+own; the kit does not provide one yet.
+
+## Persistence
+
+A **scope** is what one unit of work may reach. The domain declares one per use case, so a use case
+can only touch what it asked for and the compiler is what says so:
+
+```swift
 package protocol PublishPostUseCaseScope: Sendable {
     var postRepository: any PostRepository { get }
 }
 
-package struct PublishPostUseCase<DatabaseType>: PublishPostUseCaseProtocol
+package struct PublishPostUseCase<DatabaseType>: Sendable
 where DatabaseType: Database, DatabaseType.Scope: PublishPostUseCaseScope {
     private let database: DatabaseType
 
@@ -55,8 +145,7 @@ where DatabaseType: Database, DatabaseType.Scope: PublishPostUseCaseScope {
 ```
 
 ```swift
-// Persistence layer — one type, satisfying every scope the app has.
-package struct PostgresAppScope: PostgresScope, PublishPostUseCaseScope, ListPostsUseCaseScope {
+package struct PostgresAppScope: PostgresScope, PublishPostUseCaseScope {
     package let postRepository: any PostRepository
 
     package init(connection: PostgresConnection, logger: Logger) {
@@ -65,15 +154,15 @@ package struct PostgresAppScope: PostgresScope, PublishPostUseCaseScope, ListPos
 }
 ```
 
-The connection never leaves the scope, so no use case can hold one past the end of its work.
-Substituting a fake in a test needs no seam invented for testing — it is the same seam the
-composition root uses:
+The connection never leaves the scope. Substituting a fake needs no seam invented for testing:
 
 ```swift
 struct MockDatabase<Scope: Sendable>: Database {
     let scope: Scope
 
-    func withTransaction<T: Sendable>(_ operation: @Sendable (Scope) async throws -> T) async throws -> T {
+    func withTransaction<T: Sendable>(
+        _ operation: @Sendable (Scope) async throws -> T
+    ) async throws -> T {
         try await operation(scope)
     }
 }
@@ -81,77 +170,45 @@ struct MockDatabase<Scope: Sendable>: Database {
 
 ### Why there is no connection path
 
-`withTransaction` is the only entry point, deliberately. Under row-level security the caller is set
-on the transaction and the policy reads it from there, so a read outside one would arrive anonymous
-— and would not fail, it would come back empty. An app with no policies pays a transaction it did
-not need; an app with them cannot forget.
+`withTransaction` is the only entry point. Under row-level security the caller is set on the
+transaction and the policy reads it from there, so a read outside one arrives anonymous — and does
+not fail, it comes back empty. An app with no policies pays a transaction it did not need; an app
+with them cannot forget.
 
-Every mature stack lands here: SQLAlchemy autobegins a transaction for every statement, Prisma's
-row-level-security extension wraps each query in one, and the Go guidance is simply never to set
-session state on a bare pooled connection. Spring keeps a read/write distinction, but as
-`@Transactional(readOnly: true)` versus `@Transactional` — both transactions.
+A `PostgresTransactionError` is unwrapped to the error that caused the rollback, so a use case
+catches the domain error its repository threw rather than a wrapper around it.
 
-## Sessions and row-level security
+### Row-level security
 
-An app opts into row-level security by supplying a `Session`. With one, `PostgresDatabase` sets its
-variables on every transaction it opens; without one, the transactions simply set none.
+Supply a `Session` and every transaction carries the caller's variables, set with
+`set_config(name, value, true)` — bound parameters, so nothing is spliced into SQL, and
+transaction-local, so they revert at commit *and* rollback and a pooled connection carries nothing
+to its next borrower.
+
+The app knows what a caller is; the kit knows how to configure a session. The caller is read from
+the task-local, so a session is built once at startup and still answers per request:
 
 ```swift
+extension SessionVariable {
+    static func callerRole(_ role: String) -> Self {
+        .init(name: "app.caller_role", value: role)
+    }
+}
+
 struct CallerSession: Session {
     @SessionBuilder
-    var variables: [any SessionVariable] {
-        if let caller = CallerContext.current {
-            CallerRole(caller.role)
-
-            if let userID = caller.userID {
-                CallerUserID(userID)
-            }
+    var variables: [SessionVariable] {
+        if let payload = Caller.current?.payload {
+            SessionVariable.callerRole(payload.role)
         }
     }
 }
 
-PostgresDatabase<PostgresAppScope>(
-    client: postgresClient,
-    session: CallerSession(),
-    logger: logger
-)
+PostgresDatabase<PostgresAppScope>(client: client, session: CallerSession(), logger: logger)
 ```
 
-The session is a named role rather than a closure because it is the app's half of a two-part
-contract: the app knows what a caller is, the database knows how to configure a session, and
-neither needs the other's business. The caller itself comes from ambient context, so it is built
-once at startup and still answers per request — asked as each unit of work begins, because the
-caller differs from one call to the next while the database does not.
-
-`SessionVariable` is a protocol, so each variable is a named type in the app that owns it — the
-name is declared once, beside the meaning of its value, rather than being a string repeated at the
-call site:
-
-```swift
-struct CallerRole: SessionVariable {
-    let name = "app.caller_role"
-    let value: String
-
-    init(_ role: UserRole) {
-        self.value = role.rawValue
-    }
-}
-```
-
-Each is applied with `set_config(name, value, true)` — one call, one variable. `set_config` rather
-than `SET LOCAL` because it takes bound parameters, so nothing is spliced into SQL and a caller
-cannot smuggle a value in; `SET LOCAL` accepts none, and outside a transaction it does not even
-warn loudly enough to notice. The trailing `true` is what makes it transaction-local: it reverts at
-commit *and* at rollback, so a pooled connection carries nothing over to its next borrower.
-
-Returning nothing is a legitimate answer rather than an edge case: an anonymous caller sets no
-variables, and policies that test for one then admit no rows — which is what an unauthenticated
-transaction deserves.
-
-Whether to supply a session is a fact about the schema rather than about who is calling, which is
-why it is decided once at the composition root and is the same for every caller.
+Omit the session and the transactions set nothing.
 
 ## Requirements
 
-Swift 6.1+, macOS 15+ or Linux. Depends on [PostgresNIO](https://github.com/vapor/postgres-nio)
-and [swift-log](https://github.com/apple/swift-log).
+Swift 6.3+, macOS 15+ or Linux.

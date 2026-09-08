@@ -1,6 +1,6 @@
 //
 //  PostgresDatabase.swift
-//  swift-persistence
+//  swift-service-kit
 //
 //  Created by Zaid Rahhawi on 9/8/26.
 //
