@@ -31,6 +31,10 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.0"),
+        // Below 5.7.0 on purpose: 5.7.0 compiles with `treatAllWarnings(as: .error)`, and Xcode
+        // passes `-suppress-warnings` to every dependency, which the compiler refuses to combine.
+        // `swift build` passes on 5.7.0; the Xcode build does not. Revisit when jwt-kit drops the
+        // setting or Xcode stops adding the flag.
         .package(url: "https://github.com/vapor/jwt-kit.git", "5.3.0"..<"5.7.0"),
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.1"),
