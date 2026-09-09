@@ -5,7 +5,7 @@
 //  Created by Zaid Rahhawi on 9/9/26.
 //
 
-import Authentication
+import UserAuthentication
 import JWTKit
 
 /// A ``TokenVerifier`` that reads EdDSA-signed JSON Web Tokens with the public key alone.

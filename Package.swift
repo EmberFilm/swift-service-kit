@@ -20,8 +20,12 @@ let package = Package(
             targets: ["PersistenceTesting"]
         ),
         .library(
-            name: "Authentication",
-            targets: ["Authentication"]
+            name: "UserAuthentication",
+            targets: ["UserAuthentication"]
+        ),
+        .library(
+            name: "PeerAuthentication",
+            targets: ["PeerAuthentication"]
         ),
         .library(
             name: "JWTAuthentication",
@@ -72,10 +76,17 @@ let package = Package(
             name: "PersistenceTesting",
             dependencies: ["Persistence"]
         ),
-        // The shapes: what a signer and a verifier are, and the two contexts a call binds. Depends on
-        // no token format, so a domain target links it without pulling a JWT library in behind it.
+        // The shapes for a person: what a signer and a verifier are, and the context a call binds.
+        // Depends on nothing, so a domain target links it without pulling a token library or a
+        // certificate library in behind it.
         .target(
-            name: "Authentication",
+            name: "UserAuthentication"
+        ),
+        // The shapes for a process: what an identifier is, and the context a call binds. Its own
+        // target because a peer is named by a certificate, and only the services that admit
+        // processes should link the certificate library.
+        .target(
+            name: "PeerAuthentication",
             dependencies: [
                 .product(name: "X509", package: "swift-certificates"),
             ]
@@ -85,7 +96,7 @@ let package = Package(
         .target(
             name: "JWTAuthentication",
             dependencies: [
-                "Authentication",
+                "UserAuthentication",
                 .product(name: "JWTKit", package: "jwt-kit"),
             ]
         ),
@@ -94,7 +105,7 @@ let package = Package(
         .target(
             name: "SPIFFEAuthentication",
             dependencies: [
-                "Authentication",
+                "PeerAuthentication",
                 .product(name: "X509", package: "swift-certificates"),
             ]
         ),
@@ -104,7 +115,8 @@ let package = Package(
         .target(
             name: "GRPCAuthentication",
             dependencies: [
-                "Authentication",
+                "UserAuthentication",
+                "PeerAuthentication",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2Posix", package: "grpc-swift-nio-transport"),
                 .product(name: "X509", package: "swift-certificates"),
@@ -113,7 +125,7 @@ let package = Package(
         .target(
             name: "HTTPAuthentication",
             dependencies: [
-                "Authentication",
+                "UserAuthentication",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdAuth", package: "hummingbird-auth"),
             ]

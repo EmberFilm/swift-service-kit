@@ -5,7 +5,7 @@
 //  Created by Zaid Rahhawi on 8/20/26.
 //
 
-import Authentication
+import UserAuthentication
 import Hummingbird
 import HummingbirdAuth
 

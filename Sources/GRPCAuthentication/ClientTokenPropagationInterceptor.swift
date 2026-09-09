@@ -5,7 +5,7 @@
 //  Created by Zaid Rahhawi on 8/21/26.
 //
 
-import Authentication
+import UserAuthentication
 import GRPCCore
 
 /// Attaches the calling request's access token to an outgoing RPC.

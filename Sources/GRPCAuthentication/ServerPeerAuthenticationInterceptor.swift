@@ -5,7 +5,7 @@
 //  Created by Zaid Rahhawi on 9/9/26.
 //
 
-import Authentication
+import PeerAuthentication
 import GRPCCore
 import GRPCNIOTransportHTTP2Posix
 

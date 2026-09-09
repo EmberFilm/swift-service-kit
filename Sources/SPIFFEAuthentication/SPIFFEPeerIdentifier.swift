@@ -5,7 +5,7 @@
 //  Created by Zaid Rahhawi on 9/9/26.
 //
 
-import Authentication
+import PeerAuthentication
 import X509
 
 /// A ``PeerIdentifier`` that reads a certificate's ``SPIFFEID``.

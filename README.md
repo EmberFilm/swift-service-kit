@@ -6,7 +6,7 @@ that hands a use case exactly the repositories it may touch, and a caller you ca
 It holds no domain types. You bring your own claims, your own repositories, your own rules.
 
 ```swift
-.package(url: "https://github.com/EmberFilm/swift-service-kit.git", from: "0.2.0"),
+.package(url: "https://github.com/EmberFilm/swift-service-kit.git", from: "0.8.0"),
 ```
 
 ## Products
@@ -16,13 +16,18 @@ It holds no domain types. You bring your own claims, your own repositories, your
 | `Persistence` | — | `Database` — the transaction boundary and the scope it hands over |
 | `PostgresPersistence` | PostgresNIO | the Postgres driver, plus row-level-security session variables |
 | `PersistenceTesting` | — | `MockDatabase` — a `Database` with no transaction and a fixed scope, for use-case tests |
-| `Authentication` | swift-certificates | the `TokenSigner` and `TokenVerifier` protocols, `UserAuthenticationContext<Payload>` for a person, `PeerAuthenticationContext<Peer>` for a process |
+| `UserAuthentication` | — | the `TokenSigner` and `TokenVerifier` protocols and `UserAuthenticationContext<Payload>`, for a person |
+| `PeerAuthentication` | swift-certificates | the `PeerIdentifier` protocol and `PeerAuthenticationContext<Peer>`, for a process |
 | `JWTAuthentication` | jwt-kit | `JWTTokenSigner` and `JWTTokenVerifier`, the JWT implementation of the two protocols |
+| `SPIFFEAuthentication` | swift-certificates | `SPIFFEID` and `SPIFFEPeerIdentifier`, the SPIFFE implementation of the identifier |
 | `GRPCAuthentication` | grpc-swift-2, swift-certificates | interceptors that bind a person from their token or a process from its certificate on the way in, and resend the token on the way out |
 | `HTTPAuthentication` | hummingbird-auth | the same for Hummingbird |
 
-Link only what you use. `Persistence` and `Authentication` have no transport dependency at all, so
-a domain target links them without pulling gRPC or a database driver in behind it.
+Link only what you use. `Persistence` and `UserAuthentication` depend on nothing at all, so a
+domain target links them without pulling gRPC, a token library or a database driver in behind
+it. A person and a process are separate products because they are proved by different things — a
+token and a certificate — and a service that admits only people should not link the certificate
+library.
 
 ## Authentication
 

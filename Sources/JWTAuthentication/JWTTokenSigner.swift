@@ -5,7 +5,7 @@
 //  Created by Zaid Rahhawi on 9/9/26.
 //
 
-import Authentication
+import UserAuthentication
 import JWTKit
 
 /// A ``TokenSigner`` that mints EdDSA-signed JSON Web Tokens.
