@@ -29,14 +29,14 @@ import HummingbirdAuth
 /// ``ServerTokenAuthenticationInterceptor`` draws the same line for gRPC.
 public struct TokenAuthenticationMiddleware<Context>: RouterMiddleware where Context: AuthRequestContext {
     private let verifier: any TokenVerifier<Context.Identity>
-    private let authentication: TaskLocal<AuthenticationContext<Context.Identity>?>
+    private let authentication: TaskLocal<UserAuthenticationContext<Context.Identity>?>
 
     /// - Parameters:
     ///   - verifier: Reads the token with the public key.
     ///   - authentication: The app's task-local, bound for the length of each request that carries a token.
     public init(
         verifier: any TokenVerifier<Context.Identity>,
-        authentication: TaskLocal<AuthenticationContext<Context.Identity>?>
+        authentication: TaskLocal<UserAuthenticationContext<Context.Identity>?>
     ) {
         self.verifier = verifier
         self.authentication = authentication
@@ -57,7 +57,7 @@ public struct TokenAuthenticationMiddleware<Context>: RouterMiddleware where Con
 
         var context = context
         context.identity = payload
-        let authentication = AuthenticationContext(payload: payload, token: token)
+        let authentication = UserAuthenticationContext(payload: payload, token: token)
 
         return try await self.authentication.withValue(authentication) {
             return try await next(request, context)

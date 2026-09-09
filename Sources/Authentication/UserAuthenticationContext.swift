@@ -1,5 +1,5 @@
 //
-//  AuthenticationContext.swift
+//  UserAuthenticationContext.swift
 //  swift-service-kit
 //
 //  Created by Zaid Rahhawi on 9/9/26.
@@ -19,7 +19,7 @@
 ///
 /// ```swift
 /// enum Caller {
-///     @TaskLocal static var current: AuthenticationContext<AppToken>?
+///     @TaskLocal static var current: UserAuthenticationContext<AppToken>?
 /// }
 ///
 /// ServerTokenAuthenticationInterceptor(verifier: verifier, authentication: Caller.$current)
@@ -29,7 +29,7 @@
 /// Whether it is `nil` is not a failure: the interceptors identify a caller without requiring
 /// one, so a handler that needs a caller reads it and refuses when nothing is bound. The type
 /// itself carries no roles or permissions; those belong to the payload.
-public struct AuthenticationContext<Payload: Sendable>: Sendable {
+public struct UserAuthenticationContext<Payload: Sendable>: Sendable {
     public let payload: Payload
     public let token: String
 

@@ -16,7 +16,7 @@ It holds no domain types. You bring your own claims, your own repositories, your
 | `Persistence` | — | `Database` — the transaction boundary and the scope it hands over |
 | `PostgresPersistence` | PostgresNIO | the Postgres driver, plus row-level-security session variables |
 | `PersistenceTesting` | — | `MockDatabase` — a `Database` with no transaction and a fixed scope, for use-case tests |
-| `Authentication` | swift-certificates | the `TokenSigner` and `TokenVerifier` protocols, `AuthenticationContext<Payload>` for a person, `PeerAuthenticationContext<Peer>` for a process |
+| `Authentication` | swift-certificates | the `TokenSigner` and `TokenVerifier` protocols, `UserAuthenticationContext<Payload>` for a person, `PeerAuthenticationContext<Peer>` for a process |
 | `JWTAuthentication` | jwt-kit | `JWTTokenSigner` and `JWTTokenVerifier`, the JWT implementation of the two protocols |
 | `GRPCAuthentication` | grpc-swift-2, swift-certificates | interceptors that bind a person from their token or a process from its certificate on the way in, and resend the token on the way out |
 | `HTTPAuthentication` | hummingbird-auth | the same for Hummingbird |
@@ -52,13 +52,13 @@ struct AppToken: JWTPayload {
 
 ### What a call proved, for the length of the call
 
-`AuthenticationContext<Payload>` is the verified payload together with the encoded token that
+`UserAuthenticationContext<Payload>` is the verified payload together with the encoded token that
 proved it, bound to the task so a handler can reach the caller without threading it through every
 signature. The app declares where it lives, with an ordinary task-local:
 
 ```swift
 enum Caller {
-    @TaskLocal static var current: AuthenticationContext<AppToken>?
+    @TaskLocal static var current: UserAuthenticationContext<AppToken>?
 }
 ```
 
@@ -128,7 +128,7 @@ ServerPeerAuthenticationInterceptor(peer: Caller.$service) { certificate in
 }
 ```
 
-What is bound is a `PeerAuthenticationContext`, the counterpart of `AuthenticationContext`: the
+What is bound is a `PeerAuthenticationContext`, the counterpart of `UserAuthenticationContext`: the
 peer the app named, and the certificate that named it. A handler reads `Caller.service?.peer`.
 
 The transport has already checked that the certificate chains to the trust roots. `identify` says

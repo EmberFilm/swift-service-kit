@@ -17,10 +17,10 @@ import GRPCCore
 ///
 /// Register it on the `GRPCClient` rather than per call, so a service cannot forget it.
 public struct ClientTokenPropagationInterceptor<Payload: Sendable>: ClientInterceptor {
-    private let authentication: TaskLocal<AuthenticationContext<Payload>?>
+    private let authentication: TaskLocal<UserAuthenticationContext<Payload>?>
 
     /// - Parameter authentication: The app's task-local, the one the server side binds.
-    public init(authentication: TaskLocal<AuthenticationContext<Payload>?>) {
+    public init(authentication: TaskLocal<UserAuthenticationContext<Payload>?>) {
         self.authentication = authentication
     }
 

@@ -27,14 +27,14 @@ import GRPCCore
 /// ``ClientTokenPropagationInterceptor`` reads it back when the handler calls another service.
 public struct ServerTokenAuthenticationInterceptor<Payload: Sendable>: ServerInterceptor {
     private let verifier: any TokenVerifier<Payload>
-    private let authentication: TaskLocal<AuthenticationContext<Payload>?>
+    private let authentication: TaskLocal<UserAuthenticationContext<Payload>?>
 
     /// - Parameters:
     ///   - verifier: Reads the token with the public key.
     ///   - authentication: The app's task-local, bound for the length of each call that carries a token.
     public init(
         verifier: any TokenVerifier<Payload>,
-        authentication: TaskLocal<AuthenticationContext<Payload>?>
+        authentication: TaskLocal<UserAuthenticationContext<Payload>?>
     ) {
         self.verifier = verifier
         self.authentication = authentication
@@ -54,7 +54,7 @@ public struct ServerTokenAuthenticationInterceptor<Payload: Sendable>: ServerInt
         }
 
         let payload = try await verify(token)
-        let authentication = AuthenticationContext(payload: payload, token: token)
+        let authentication = UserAuthenticationContext(payload: payload, token: token)
 
         return try await self.authentication.withValue(authentication) {
             return try await next(request, context)
