@@ -40,6 +40,10 @@ let package = Package(
             targets: ["GRPCAuthentication"]
         ),
         .library(
+            name: "GRPCNIOTransportAuthentication",
+            targets: ["GRPCNIOTransportAuthentication"]
+        ),
+        .library(
             name: "HTTPAuthentication",
             targets: ["HTTPAuthentication"]
         )
@@ -109,17 +113,25 @@ let package = Package(
                 .product(name: "X509", package: "swift-certificates"),
             ]
         ),
-        // Binds both callers: the person from the bearer token, the process from the mTLS
-        // certificate. It needs the NIO transport because the peer certificate is transport
-        // specific — `GRPCCore` alone cannot see it.
+        // Binds the person from the bearer token, on the way in and the way out. Metadata is all
+        // it reads, so it depends on `GRPCCore` alone and works on any transport.
         .target(
             name: "GRPCAuthentication",
             dependencies: [
                 "UserAuthentication",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+            ]
+        ),
+        // Binds the process from its mTLS certificate. Its own target, named for the transport,
+        // because the certificate is transport specific — only the NIO Posix HTTP/2 transport
+        // exposes it — and a service that admits only people should not link that transport
+        // through the token interceptors.
+        .target(
+            name: "GRPCNIOTransportAuthentication",
+            dependencies: [
                 "PeerAuthentication",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2Posix", package: "grpc-swift-nio-transport"),
-                .product(name: "X509", package: "swift-certificates"),
             ]
         ),
         .target(

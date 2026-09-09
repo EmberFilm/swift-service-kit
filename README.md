@@ -20,7 +20,8 @@ It holds no domain types. You bring your own claims, your own repositories, your
 | `PeerAuthentication` | swift-certificates | the `PeerIdentifier` protocol and `PeerAuthenticationContext<Peer>`, for a process |
 | `JWTAuthentication` | jwt-kit | `JWTTokenSigner` and `JWTTokenVerifier`, the JWT implementation of the two protocols |
 | `SPIFFEAuthentication` | swift-certificates | `SPIFFEID` and `SPIFFEPeerIdentifier`, the SPIFFE implementation of the identifier |
-| `GRPCAuthentication` | grpc-swift-2, swift-certificates | interceptors that bind a person from their token or a process from its certificate on the way in, and resend the token on the way out |
+| `GRPCAuthentication` | grpc-swift-2 | interceptors that bind a person from their token on the way in and resend it on the way out; any transport |
+| `GRPCNIOTransportAuthentication` | grpc-swift-nio-transport | the interceptor that binds a process from its mTLS certificate; needs the NIO Posix HTTP/2 transport, the only one that exposes it |
 | `HTTPAuthentication` | hummingbird-auth | the same for Hummingbird |
 
 Link only what you use. `Persistence` and `UserAuthentication` depend on nothing at all, so a
