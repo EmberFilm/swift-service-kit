@@ -5,9 +5,10 @@
 //  Created by Zaid Rahhawi on 9/9/26.
 //
 
-import PeerAuthentication
 import GRPCCore
 import GRPCNIOTransportHTTP2Posix
+import PeerAuthentication
+import ServiceContextModule
 
 /// Identifies the process behind an RPC from its mTLS client certificate, without requiring one.
 ///
@@ -15,7 +16,7 @@ import GRPCNIOTransportHTTP2Posix
 /// ``ServerTokenAuthenticationInterceptor`` reads; a process proves it with the certificate it
 /// presented at the handshake, which this reads. The two are independent, because a request can
 /// carry both — a service relaying a person's call arrives with its own certificate *and* the
-/// person's token — and each binds its own task-local.
+/// person's token — and each sets its own key in the task's `ServiceContext`.
 ///
 /// The transport has already checked that the certificate chains to the trust roots by the time
 /// this runs, so what remains is to say *who* it names: the ``PeerIdentifier`` reads the
@@ -36,19 +37,11 @@ import GRPCNIOTransportHTTP2Posix
 /// arrives unbound.
 public struct ServerPeerAuthenticationInterceptor<Peer: Sendable>: ServerInterceptor {
     private let identifier: any PeerIdentifier<Peer>
-    private let peer: TaskLocal<PeerAuthenticationContext<Peer>?>
 
-    /// - Parameters:
-    ///   - identifier: Names the peer from its leaf certificate, or returns `nil` for one it has
-    ///     no name for.
-    ///   - peer: The app's task-local, bound for the length of each call whose certificate the
-    ///     identifier recognises.
-    public init(
-        identifier: any PeerIdentifier<Peer>,
-        peer: TaskLocal<PeerAuthenticationContext<Peer>?>
-    ) {
+    /// - Parameter identifier: Names the peer from its leaf certificate, or returns `nil` for one
+    ///   it has no name for.
+    public init(identifier: any PeerIdentifier<Peer>) {
         self.identifier = identifier
-        self.peer = peer
     }
 
     public func intercept<Input: Sendable, Output: Sendable>(
@@ -68,9 +61,10 @@ public struct ServerPeerAuthenticationInterceptor<Peer: Sendable>: ServerInterce
             return try await next(request, context)
         }
 
-        let peerContext = PeerAuthenticationContext(peer: identified, certificate: certificate)
+        var serviceContext = ServiceContext.current ?? .topLevel
+        serviceContext[PeerAuthenticationKey<Peer>.self] = PeerAuthenticationContext(peer: identified, certificate: certificate)
 
-        return try await peer.withValue(peerContext) {
+        return try await ServiceContext.withValue(serviceContext) {
             return try await next(request, context)
         }
     }

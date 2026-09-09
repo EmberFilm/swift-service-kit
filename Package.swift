@@ -20,6 +20,10 @@ let package = Package(
             targets: ["PersistenceTesting"]
         ),
         .library(
+            name: "AuthenticationTesting",
+            targets: ["AuthenticationTesting"]
+        ),
+        .library(
             name: "UserAuthentication",
             targets: ["UserAuthentication"]
         ),
@@ -59,6 +63,7 @@ let package = Package(
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.1"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.20.0"),
+        .package(url: "https://github.com/apple/swift-service-context.git", from: "1.1.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.26.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird-auth.git", from: "2.2.0"),
     ],
@@ -80,20 +85,31 @@ let package = Package(
             name: "PersistenceTesting",
             dependencies: ["Persistence"]
         ),
-        // The shapes for a person: what a signer and a verifier are, and the context a call binds.
-        // Depends on nothing, so a domain target links it without pulling a token library or a
-        // certificate library in behind it.
+        // The shapes for a person: what a signer and a verifier are, the context a call binds, and
+        // the `ServiceContext` key it is bound under. Depends on nothing but swift-service-context,
+        // itself dependency-free, so a domain target links it without pulling a token library or
+        // a certificate library in behind it.
         .target(
-            name: "UserAuthentication"
+            name: "UserAuthentication",
+            dependencies: [
+                .product(name: "ServiceContextModule", package: "swift-service-context"),
+            ]
         ),
-        // The shapes for a process: what an identifier is, and the context a call binds. Its own
-        // target because a peer is named by a certificate, and only the services that admit
-        // processes should link the certificate library.
+        // The shapes for a process: what an identifier is, the context a call binds, and its key.
+        // Its own target because a peer is named by a certificate, and only the services that
+        // admit processes should link the certificate library.
         .target(
             name: "PeerAuthentication",
             dependencies: [
+                .product(name: "ServiceContextModule", package: "swift-service-context"),
                 .product(name: "X509", package: "swift-certificates"),
             ]
+        ),
+        // For a handler test: a verifier that answers from a table instead of a key. Its own
+        // product so a service's production targets never link it by accident.
+        .target(
+            name: "AuthenticationTesting",
+            dependencies: ["UserAuthentication"]
         ),
         // The JWT implementation of the signer and verifier, over jwt-kit. The one place the kit
         // knows what a token looks like on the wire.

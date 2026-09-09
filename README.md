@@ -16,17 +16,18 @@ It holds no domain types. You bring your own claims, your own repositories, your
 | `Persistence` | — | `Database` — the transaction boundary and the scope it hands over |
 | `PostgresPersistence` | PostgresNIO | the Postgres driver, plus row-level-security session variables |
 | `PersistenceTesting` | — | `MockDatabase` — a `Database` with no transaction and a fixed scope, for use-case tests |
-| `UserAuthentication` | — | the `TokenSigner` and `TokenVerifier` protocols and `UserAuthenticationContext<Payload>`, for a person |
-| `PeerAuthentication` | swift-certificates | the `PeerIdentifier` protocol and `PeerAuthenticationContext<Peer>`, for a process |
+| `UserAuthentication` | swift-service-context | the `TokenSigner` and `TokenVerifier` protocols, `UserAuthenticationContext<Payload>`, and the `ServiceContext` key it is bound under, for a person |
+| `PeerAuthentication` | swift-service-context, swift-certificates | the `PeerIdentifier` protocol, `PeerAuthenticationContext<Peer>`, and its key, for a process |
+| `AuthenticationTesting` | — | `MockTokenVerifier` — a `TokenVerifier` that answers from a table, for handler tests |
 | `JWTAuthentication` | jwt-kit | `JWTTokenSigner` and `JWTTokenVerifier`, the JWT implementation of the two protocols |
 | `SPIFFEAuthentication` | swift-certificates | `SPIFFEID` and `SPIFFEPeerIdentifier`, the SPIFFE implementation of the identifier |
 | `GRPCAuthentication` | grpc-swift-2 | interceptors that bind a person from their token on the way in and resend it on the way out; any transport |
 | `GRPCNIOTransportAuthentication` | grpc-swift-nio-transport | the interceptor that binds a process from its mTLS certificate; needs the NIO Posix HTTP/2 transport, the only one that exposes it |
 | `HTTPAuthentication` | hummingbird-auth | the same for Hummingbird |
 
-Link only what you use. `Persistence` and `UserAuthentication` depend on nothing at all, so a
-domain target links them without pulling gRPC, a token library or a database driver in behind
-it. A person and a process are separate products because they are proved by different things — a
+Link only what you use. `Persistence` depends on nothing, and `UserAuthentication` on nothing
+but swift-service-context, which is itself dependency-free, so a domain target links them
+without pulling gRPC, a token library or a database driver in behind it. A person and a process are separate products because they are proved by different things — a
 token and a certificate — and a service that admits only people should not link the certificate
 library.
 
@@ -59,18 +60,27 @@ struct AppToken: JWTPayload {
 ### What a call proved, for the length of the call
 
 `UserAuthenticationContext<Payload>` is the verified payload together with the encoded token that
-proved it, bound to the task so a handler can reach the caller without threading it through every
-signature. The app declares where it lives, with an ordinary task-local:
+proved it. For the length of the call it lives in the task's `ServiceContext`, under
+`UserAuthenticationKey<Payload>`, so a handler can reach the caller without threading it through
+every signature:
 
 ```swift
-enum Caller {
-    @TaskLocal static var current: UserAuthenticationContext<AppToken>?
-}
+let caller = ServiceContext.current?[UserAuthenticationKey<AppToken>.self]?.payload
 ```
 
-A generic type cannot hold a stored static, so the task-local is the app's rather than the kit's.
-The interceptors receive it the same way they receive the verifier, and everything else — reading
-it, binding it in a test — is the standard library's `TaskLocal` API.
+`ServiceContext` is [swift-service-context](https://github.com/apple/swift-service-context), the
+one task-local the server ecosystem shares: tracing puts spans in it, a `Logger.MetadataProvider`
+reads it for every log line, and the transports carry it. Binding the caller there rather than in
+a task-local of the kit's own means the user id can appear in every log line and span of a request
+without the app wiring anything. An app usually spells the lookup once:
+
+```swift
+extension ServiceContext {
+    var caller: UserAuthenticationContext<AppToken>? {
+        self[UserAuthenticationKey<AppToken>.self]
+    }
+}
+```
 
 ### Binding the caller
 
@@ -79,7 +89,7 @@ token continues anonymously, which is what an open route needs — logging in an
 the first token and have no caller yet. A token that is present but does not verify is refused
 rather than read as anonymous, because absent and invalid are not the same thing.
 
-For gRPC:
+For gRPC, on the services whose RPCs take a token:
 
 ```swift
 let verifier = await JWTTokenVerifier<AppToken>(publicKey: publicKey)
@@ -87,8 +97,8 @@ let verifier = await JWTTokenVerifier<AppToken>(publicKey: publicKey)
 GRPCServer(
     transport: transport,
     services: [service],
-    interceptors: [
-        ServerTokenAuthenticationInterceptor(verifier: verifier, authentication: Caller.$current)
+    interceptorPipeline: [
+        .apply(ServerTokenAuthenticationInterceptor(verifier: verifier), to: .services([Service.descriptor]))
     ]
 )
 ```
@@ -97,22 +107,20 @@ For Hummingbird, on a router whose context conforms to `AuthRequestContext` with
 identity:
 
 ```swift
-router.add(middleware: TokenAuthenticationMiddleware<AppRequestContext>(verifier: verifier, authentication: Caller.$current))
+router.add(middleware: TokenAuthenticationMiddleware<AppRequestContext>(verifier: verifier))
 ```
 
 The Hummingbird middleware sets both the request context's `identity`, which
-`IsAuthenticatedMiddleware` and route handlers read, and the task-local.
+`IsAuthenticatedMiddleware` and route handlers read, and the `ServiceContext` key.
 
 ### Insisting on a caller
 
 Requiring a caller is the handler's decision, not the interceptor's:
 
 ```swift
-guard let authentication = Caller.current else {
+guard let caller = ServiceContext.current?.caller?.payload else {
     throw RPCError(code: .unauthenticated, message: "Sign in to continue.")
 }
-
-let caller = authentication.payload
 ```
 
 On the HTTP side, add `IsAuthenticatedMiddleware` to the protected routes.
@@ -120,32 +128,27 @@ On the HTTP side, add `IsAuthenticatedMiddleware` to the protected routes.
 ### A process, from its certificate
 
 A person proves who they are with a bearer token. A process proves it with the mTLS client
-certificate it presented at the handshake. Both are bound per call, independently, because a
-request can carry both — a service relaying a person's call arrives with its own certificate *and*
-the person's token:
+certificate it presented at the handshake. Both are bound per call, independently and under
+separate keys, because a request can carry both — a service relaying a person's call arrives
+with its own certificate *and* the person's token:
 
 ```swift
-enum Caller {
-    @TaskLocal static var service: PeerAuthenticationContext<SPIFFEID>?
-}
+import GRPCNIOTransportAuthentication
 
-ServerPeerAuthenticationInterceptor(
-    identifier: SPIFFEPeerIdentifier(trustDomain: "emberfilm"),
-    peer: Caller.$service
-)
+ServerPeerAuthenticationInterceptor(identifier: SPIFFEPeerIdentifier(trustDomain: "emberfilm"))
 ```
 
 `PeerIdentifier` is the peer counterpart of `TokenVerifier`, and the only one there is: the
 transport verified the certificate at the handshake, a CA outside the process issued it, and the
 TLS client presents it on every connection unasked. What remains for the application is reading
 who it names. `SPIFFEAuthentication` ships `SPIFFEPeerIdentifier`, which reads the
-`spiffe://<trust-domain>/<path>` URI subject
-alternative name; an app whose peers are richer than an ID wraps it in a `PeerIdentifier` of its
-own and maps the ID.
+`spiffe://<trust-domain>/<path>` URI subject alternative name; an app whose peers are richer than
+an ID wraps it in a `PeerIdentifier` of its own and maps the ID.
 
 What is bound is a `PeerAuthenticationContext`, the counterpart of `UserAuthenticationContext`:
-the peer the identifier named, and the certificate that named it. A handler reads
-`Caller.service?.peer`.
+the peer the identifier named, and the certificate that named it, under
+`PeerAuthenticationKey<Peer>`. A handler reads
+`ServiceContext.current?[PeerAuthenticationKey<SPIFFEID>.self]?.peer`.
 
 The transport has already checked that the certificate chains to the trust roots. The identifier
 says who it names, and returns `nil` for a peer it has no name for, which arrives unbound rather
@@ -153,24 +156,41 @@ than refused — the transport rejected the invalid ones, and an unlisted peer i
 this service simply does not admit. What a peer may then do is the destination's decision, made
 where the service is built: a certificate proves a credential, never a permission.
 
-Only the Posix HTTP/2 transport exposes the certificate; on any other transport every call arrives
-unbound.
+The peer interceptor is its own product, `GRPCNIOTransportAuthentication`, because only the NIO
+Posix HTTP/2 transport exposes the certificate; the token interceptors in `GRPCAuthentication`
+read metadata alone and work on any transport.
 
 ### Calling onward as the same caller
 
-`ClientTokenPropagationInterceptor` reads the same task-local and puts the token back on the outgoing
-call, so one token identifies the caller at every service in the chain. Register it on the
-`GRPCClient` so a service cannot forget it:
+`ClientTokenPropagationInterceptor` reads the same key and puts the token back on the outgoing
+call, so one token identifies the caller at every service in the chain. Apply it to the services
+that take a token, so a public service is dialled with nothing:
 
 ```swift
-GRPCClient(transport: transport, interceptors: [
-    ClientTokenPropagationInterceptor(authentication: Caller.$current)
+GRPCClient(transport: transport, interceptorPipeline: [
+    .apply(ClientTokenPropagationInterceptor<AppToken>(), to: .services([UpstreamService.descriptor]))
 ])
 ```
 
 Calls made outside a caller's request — startup work, a workflow activity — go out unauthenticated
-rather than failing. A process that must identify itself on such calls needs a credential of its
-own; the kit does not provide one yet.
+rather than failing. A process identifies itself on such calls with its certificate, not a token.
+
+### Testing a handler
+
+`AuthenticationTesting` ships `MockTokenVerifier`, a `TokenVerifier` over a table, so a handler
+test sends `Bearer admin-token` and never mints a key:
+
+```swift
+let verifier = MockTokenVerifier(["admin-token": AppToken(role: .admin)])
+```
+
+A use-case test that needs a bound caller uses the standard API:
+
+```swift
+var context = ServiceContext.topLevel
+context[UserAuthenticationKey<AppToken>.self] = UserAuthenticationContext(payload: token, token: "-")
+try await ServiceContext.withValue(context) { try await useCase(input: input) }
+```
 
 ## Persistence
 
@@ -232,7 +252,7 @@ transaction-local, so they revert at commit *and* rollback and a pooled connecti
 to its next borrower.
 
 The app knows what a caller is; the kit knows how to configure a session. The caller is read from
-the task-local, so a session is built once at startup and still answers per request:
+the `ServiceContext`, so a session is built once at startup and still answers per request:
 
 ```swift
 extension SessionVariable {
@@ -244,7 +264,7 @@ extension SessionVariable {
 struct CallerSession: Session {
     @SessionBuilder
     var variables: [SessionVariable] {
-        if let payload = Caller.current?.payload {
+        if let payload = ServiceContext.current?.caller?.payload {
             SessionVariable.callerRole(payload.role)
         }
     }

@@ -5,15 +5,17 @@
 //  Created by Zaid Rahhawi on 8/20/26.
 //
 
-import UserAuthentication
 import GRPCCore
+import ServiceContextModule
+import UserAuthentication
 
 /// Identifies the caller of an RPC from its bearer token, without requiring there to be one.
 ///
-/// Apply it to every RPC. It binds the app's task-local when a token is present and leaves it
-/// `nil` when there is none, which is what an unprotected RPC needs — registration and login
-/// mint the first token and have no caller yet. Insisting on a caller is a separate decision,
-/// left to the handler that needs one: it reads the task-local and refuses with
+/// Apply it to every RPC that takes a token. It puts a ``UserAuthenticationContext`` in the task's
+/// `ServiceContext` when a token is present and leaves the context untouched when there is
+/// none, which is what an unprotected RPC needs — registration and login mint the first token
+/// and have no caller yet. Insisting on a caller is a separate decision, left to the handler
+/// that needs one: it reads the context and refuses with
 /// `RPCError(code: .unauthenticated)` when nothing is bound. That is the same split as
 /// ``TokenAuthenticationMiddleware`` and `IsAuthenticatedMiddleware` on the HTTP side — identifying a caller
 /// and requiring one are not the same job.
@@ -27,17 +29,10 @@ import GRPCCore
 /// ``ClientTokenPropagationInterceptor`` reads it back when the handler calls another service.
 public struct ServerTokenAuthenticationInterceptor<Payload: Sendable>: ServerInterceptor {
     private let verifier: any TokenVerifier<Payload>
-    private let authentication: TaskLocal<UserAuthenticationContext<Payload>?>
 
-    /// - Parameters:
-    ///   - verifier: Reads the token with the public key.
-    ///   - authentication: The app's task-local, bound for the length of each call that carries a token.
-    public init(
-        verifier: any TokenVerifier<Payload>,
-        authentication: TaskLocal<UserAuthenticationContext<Payload>?>
-    ) {
+    /// - Parameter verifier: Reads the token with the public key.
+    public init(verifier: any TokenVerifier<Payload>) {
         self.verifier = verifier
-        self.authentication = authentication
     }
 
     public func intercept<Input: Sendable, Output: Sendable>(
@@ -54,9 +49,11 @@ public struct ServerTokenAuthenticationInterceptor<Payload: Sendable>: ServerInt
         }
 
         let payload = try await verify(token)
-        let authentication = UserAuthenticationContext(payload: payload, token: token)
 
-        return try await self.authentication.withValue(authentication) {
+        var serviceContext = ServiceContext.current ?? .topLevel
+        serviceContext[UserAuthenticationKey<Payload>.self] = UserAuthenticationContext(payload: payload, token: token)
+
+        return try await ServiceContext.withValue(serviceContext) {
             return try await next(request, context)
         }
     }

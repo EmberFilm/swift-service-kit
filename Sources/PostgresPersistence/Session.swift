@@ -18,7 +18,7 @@
 /// struct CallerSession: Session {
 ///     @SessionBuilder
 ///     var variables: [SessionVariable] {
-///         if let payload = Caller.current?.payload {
+///         if let payload = ServiceContext.current?.caller?.payload {
 ///             SessionVariable.callerRole(payload.role)
 ///             SessionVariable.callerUserID(payload.userID)
 ///         }

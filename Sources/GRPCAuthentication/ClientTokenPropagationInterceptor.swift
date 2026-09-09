@@ -5,8 +5,9 @@
 //  Created by Zaid Rahhawi on 8/21/26.
 //
 
-import UserAuthentication
 import GRPCCore
+import ServiceContextModule
+import UserAuthentication
 
 /// Attaches the calling request's access token to an outgoing RPC.
 ///
@@ -17,12 +18,7 @@ import GRPCCore
 ///
 /// Register it on the `GRPCClient` rather than per call, so a service cannot forget it.
 public struct ClientTokenPropagationInterceptor<Payload: Sendable>: ClientInterceptor {
-    private let authentication: TaskLocal<UserAuthenticationContext<Payload>?>
-
-    /// - Parameter authentication: The app's task-local, the one the server side binds.
-    public init(authentication: TaskLocal<UserAuthenticationContext<Payload>?>) {
-        self.authentication = authentication
-    }
+    public init() {}
 
     /// Calls made outside a caller's request — startup work, a workflow activity, anything with
     /// no inbound token — go out unauthenticated rather than failing here. A process that must
@@ -36,7 +32,7 @@ public struct ClientTokenPropagationInterceptor<Payload: Sendable>: ClientInterc
             _ context: ClientContext
         ) async throws -> StreamingClientResponse<Output>
     ) async throws -> StreamingClientResponse<Output> {
-        guard let authentication = authentication.get() else {
+        guard let authentication = ServiceContext.current?[UserAuthenticationKey<Payload>.self] else {
             return try await next(request, context)
         }
 

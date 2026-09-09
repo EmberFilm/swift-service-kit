@@ -13,22 +13,12 @@
 /// against the payload, and ``ClientTokenPropagationInterceptor`` resends the token when the handler
 /// calls another service as the same caller.
 ///
-/// The app declares where it lives, with a task-local, and hands that to the interceptors the
-/// same way it hands them the verifier. A generic type cannot hold a stored static, which is why
-/// the declaration is the app's rather than this type's:
-///
-/// ```swift
-/// enum Caller {
-///     @TaskLocal static var current: UserAuthenticationContext<AppToken>?
-/// }
-///
-/// ServerTokenAuthenticationInterceptor(verifier: verifier, authentication: Caller.$current)
-/// ```
-///
-/// A handler then reads `Caller.current`, and a test binds one with `Caller.$current.withValue`.
-/// Whether it is `nil` is not a failure: the interceptors identify a caller without requiring
-/// one, so a handler that needs a caller reads it and refuses when nothing is bound. The type
-/// itself carries no roles or permissions; those belong to the payload.
+/// It lives in the task's `ServiceContext` under ``UserAuthenticationKey``, put there by the
+/// interceptors and middleware for the length of the call. A handler reads
+/// `ServiceContext.current?[UserAuthenticationKey<AppToken>.self]`, and a test binds one with
+/// `ServiceContext.withValue`. Whether it is there is not a failure: the interceptors identify a
+/// caller without requiring one, so a handler that needs a caller reads it and refuses when
+/// nothing is bound. The type itself carries no roles or permissions; those belong to the payload.
 public struct UserAuthenticationContext<Payload: Sendable>: Sendable {
     public let payload: Payload
     public let token: String

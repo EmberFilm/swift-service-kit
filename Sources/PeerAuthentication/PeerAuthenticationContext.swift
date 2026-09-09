@@ -17,22 +17,10 @@ import X509
 /// authorizes against the peer, and anything that needs more than a name — the certificate's
 /// expiry, its other names — has the certificate.
 ///
-/// Like `UserAuthenticationContext`, it declares no task-local of its own, because a generic type
-/// cannot hold a stored static. The app declares one and hands it to the peer interceptor:
-///
-/// ```swift
-/// enum Caller {
-///     @TaskLocal static var service: PeerAuthenticationContext<SPIFFEID>?
-/// }
-///
-/// ServerPeerAuthenticationInterceptor(
-///     identifier: SPIFFEPeerIdentifier(trustDomain: "emberfilm"),
-///     peer: Caller.$service
-/// )
-/// ```
-///
-/// A request can carry both a certificate and a token — a service relaying a person's call — so
-/// the two contexts are bound independently, and a handler reads whichever it is written for.
+/// It lives in the task's `ServiceContext` under ``PeerAuthenticationKey``, put there by the peer
+/// interceptor. A request can carry both a certificate and a token — a service relaying a
+/// person's call — so the two contexts are bound under separate keys, and a handler reads
+/// whichever it is written for.
 public struct PeerAuthenticationContext<Peer: Sendable>: Sendable {
     public let peer: Peer
     public let certificate: Certificate

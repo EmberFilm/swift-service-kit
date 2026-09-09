@@ -5,18 +5,19 @@
 //  Created by Zaid Rahhawi on 8/20/26.
 //
 
-import UserAuthentication
 import Hummingbird
 import HummingbirdAuth
+import ServiceContextModule
+import UserAuthentication
 
 /// Resolves the caller from the request's bearer token and makes them available for
 /// the rest of the request.
 ///
 /// It does both halves of that in one pass. The payload goes on the request context as its
-/// `identity`, where `IsAuthenticatedMiddleware` and the route handlers read it, and it is bound
-/// to the app's task-local alongside the encoded token, which is what lets a handler call another
-/// service as the same caller without threading the token through every signature it passes
-/// through on the way.
+/// `identity`, where `IsAuthenticatedMiddleware` and the route handlers read it, and it goes into
+/// the task's `ServiceContext` alongside the encoded token, which is what lets a handler call
+/// another service as the same caller without threading the token through every signature it
+/// passes through on the way.
 ///
 /// That is why this is a `RouterMiddleware` rather than an `AuthenticatorMiddleware`:
 /// `authenticate` returns before the route handler runs, leaving no scope in which to bind a task
@@ -29,17 +30,10 @@ import HummingbirdAuth
 /// ``ServerTokenAuthenticationInterceptor`` draws the same line for gRPC.
 public struct TokenAuthenticationMiddleware<Context>: RouterMiddleware where Context: AuthRequestContext {
     private let verifier: any TokenVerifier<Context.Identity>
-    private let authentication: TaskLocal<UserAuthenticationContext<Context.Identity>?>
 
-    /// - Parameters:
-    ///   - verifier: Reads the token with the public key.
-    ///   - authentication: The app's task-local, bound for the length of each request that carries a token.
-    public init(
-        verifier: any TokenVerifier<Context.Identity>,
-        authentication: TaskLocal<UserAuthenticationContext<Context.Identity>?>
-    ) {
+    /// - Parameter verifier: Reads the token with the public key.
+    public init(verifier: any TokenVerifier<Context.Identity>) {
         self.verifier = verifier
-        self.authentication = authentication
     }
 
     /// Passes a request with no token straight through, and refuses one whose token does not
@@ -57,9 +51,11 @@ public struct TokenAuthenticationMiddleware<Context>: RouterMiddleware where Con
 
         var context = context
         context.identity = payload
-        let authentication = UserAuthenticationContext(payload: payload, token: token)
 
-        return try await self.authentication.withValue(authentication) {
+        var serviceContext = ServiceContext.current ?? .topLevel
+        serviceContext[UserAuthenticationKey<Context.Identity>.self] = UserAuthenticationContext(payload: payload, token: token)
+
+        return try await ServiceContext.withValue(serviceContext) {
             return try await next(request, context)
         }
     }
