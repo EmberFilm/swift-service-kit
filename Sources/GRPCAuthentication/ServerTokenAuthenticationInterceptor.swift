@@ -6,7 +6,6 @@
 //
 
 import Authentication
-import JWTKit
 import GRPCCore
 
 /// Identifies the caller of an RPC from its bearer token, without requiring there to be one.
@@ -26,15 +25,15 @@ import GRPCCore
 /// The encoded token is bound alongside the payload because a handler has no way to reach it:
 /// `ServerContext` carries the method descriptor and the peers, not the request metadata.
 /// ``ClientTokenPropagationInterceptor`` reads it back when the handler calls another service.
-public struct ServerTokenAuthenticationInterceptor<Payload: JWTPayload>: ServerInterceptor {
-    private let verifier: TokenVerifier<Payload>
+public struct ServerTokenAuthenticationInterceptor<Payload: Sendable>: ServerInterceptor {
+    private let verifier: any TokenVerifier<Payload>
     private let authentication: TaskLocal<AuthenticationContext<Payload>?>
 
     /// - Parameters:
     ///   - verifier: Reads the token with the public key.
     ///   - authentication: The app's task-local, bound for the length of each call that carries a token.
     public init(
-        verifier: TokenVerifier<Payload>,
+        verifier: any TokenVerifier<Payload>,
         authentication: TaskLocal<AuthenticationContext<Payload>?>
     ) {
         self.verifier = verifier

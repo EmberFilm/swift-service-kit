@@ -24,6 +24,10 @@ let package = Package(
             targets: ["Authentication"]
         ),
         .library(
+            name: "JWTAuthentication",
+            targets: ["JWTAuthentication"]
+        ),
+        .library(
             name: "GRPCAuthentication",
             targets: ["GRPCAuthentication"]
         ),
@@ -64,10 +68,21 @@ let package = Package(
             name: "PersistenceTesting",
             dependencies: ["Persistence"]
         ),
+        // The shapes: what a signer and a verifier are, and the two contexts a call binds. Depends on
+        // no token format, so a domain target links it without pulling a JWT library in behind it.
         .target(
             name: "Authentication",
             dependencies: [
-                .product(name: "JWTKit", package: "jwt-kit")
+                .product(name: "X509", package: "swift-certificates"),
+            ]
+        ),
+        // The JWT implementation of the signer and verifier, over jwt-kit. The one place the kit
+        // knows what a token looks like on the wire.
+        .target(
+            name: "JWTAuthentication",
+            dependencies: [
+                "Authentication",
+                .product(name: "JWTKit", package: "jwt-kit"),
             ]
         ),
         // Binds both callers: the person from the bearer token, the process from the mTLS
@@ -77,7 +92,6 @@ let package = Package(
             name: "GRPCAuthentication",
             dependencies: [
                 "Authentication",
-                .product(name: "JWTKit", package: "jwt-kit"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2Posix", package: "grpc-swift-nio-transport"),
                 .product(name: "X509", package: "swift-certificates"),
@@ -87,7 +101,6 @@ let package = Package(
             name: "HTTPAuthentication",
             dependencies: [
                 "Authentication",
-                .product(name: "JWTKit", package: "jwt-kit"),
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdAuth", package: "hummingbird-auth"),
             ]

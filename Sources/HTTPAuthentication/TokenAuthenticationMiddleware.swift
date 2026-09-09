@@ -8,7 +8,6 @@
 import Authentication
 import Hummingbird
 import HummingbirdAuth
-import JWTKit
 
 /// Resolves the caller from the request's bearer token and makes them available for
 /// the rest of the request.
@@ -28,15 +27,15 @@ import JWTKit
 /// first token and have no caller yet. Turning away an anonymous request is
 /// `IsAuthenticatedMiddleware`'s job, added to the routes that are protected.
 /// ``ServerTokenAuthenticationInterceptor`` draws the same line for gRPC.
-public struct TokenAuthenticationMiddleware<Context>: RouterMiddleware where Context: AuthRequestContext, Context.Identity: JWTPayload {
-    private let verifier: TokenVerifier<Context.Identity>
+public struct TokenAuthenticationMiddleware<Context>: RouterMiddleware where Context: AuthRequestContext {
+    private let verifier: any TokenVerifier<Context.Identity>
     private let authentication: TaskLocal<AuthenticationContext<Context.Identity>?>
 
     /// - Parameters:
     ///   - verifier: Reads the token with the public key.
     ///   - authentication: The app's task-local, bound for the length of each request that carries a token.
     public init(
-        verifier: TokenVerifier<Context.Identity>,
+        verifier: any TokenVerifier<Context.Identity>,
         authentication: TaskLocal<AuthenticationContext<Context.Identity>?>
     ) {
         self.verifier = verifier

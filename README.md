@@ -16,7 +16,8 @@ It holds no domain types. You bring your own claims, your own repositories, your
 | `Persistence` | — | `Database` — the transaction boundary and the scope it hands over |
 | `PostgresPersistence` | PostgresNIO | the Postgres driver, plus row-level-security session variables |
 | `PersistenceTesting` | — | `MockDatabase` — a `Database` with no transaction and a fixed scope, for use-case tests |
-| `Authentication` | jwt-kit | `TokenSigner`, `TokenVerifier`, and `AuthenticationContext<Payload>` |
+| `Authentication` | swift-certificates | the `TokenSigner` and `TokenVerifier` protocols, `AuthenticationContext<Payload>` for a person, `PeerAuthenticationContext<Peer>` for a process |
+| `JWTAuthentication` | jwt-kit | `JWTTokenSigner` and `JWTTokenVerifier`, the JWT implementation of the two protocols |
 | `GRPCAuthentication` | grpc-swift-2, swift-certificates | interceptors that bind a person from their token or a process from its certificate on the way in, and resend the token on the way out |
 | `HTTPAuthentication` | hummingbird-auth | the same for Hummingbird |
 
@@ -26,8 +27,11 @@ a domain target links them without pulling gRPC or a database driver in behind i
 ## Authentication
 
 A caller proves who they are with a bearer token. One service holds the private key and mints
-tokens with `TokenSigner`; every other service holds the public key and reads them with
-`TokenVerifier`. Tokens are EdDSA-signed.
+tokens with a `TokenSigner`; every other service holds the public key and reads them with a
+`TokenVerifier`. Both are protocols over a payload type, so the interceptors and middleware are
+written against the payload they bind and not against a token format. `JWTAuthentication` ships
+the implementation: `JWTTokenSigner` and `JWTTokenVerifier`, EdDSA-signed JSON Web Tokens over
+jwt-kit.
 
 ### The token shape is yours
 
@@ -72,7 +76,7 @@ rather than read as anonymous, because absent and invalid are not the same thing
 For gRPC:
 
 ```swift
-let verifier = await TokenVerifier<AppToken>(publicKey: publicKey)
+let verifier = await JWTTokenVerifier<AppToken>(publicKey: publicKey)
 
 GRPCServer(
     transport: transport,
@@ -115,14 +119,17 @@ request can carry both — a service relaying a person's call arrives with its o
 the person's token:
 
 ```swift
-enum Peer {
-    @TaskLocal static var current: ServicePrincipal?
+enum Caller {
+    @TaskLocal static var service: PeerAuthenticationContext<ServicePrincipal>?
 }
 
-ServerPeerAuthenticationInterceptor(peer: Peer.$current) { certificate in
-    ServicePrincipal(certificate: certificate)   // nil for a peer this service does not admit
+ServerPeerAuthenticationInterceptor(peer: Caller.$service) { certificate in
+    ServicePrincipal(certificate: certificate)   // nil for a peer this service has no name for
 }
 ```
+
+What is bound is a `PeerAuthenticationContext`, the counterpart of `AuthenticationContext`: the
+peer the app named, and the certificate that named it. A handler reads `Caller.service?.peer`.
 
 The transport has already checked that the certificate chains to the trust roots. `identify` says
 who it names, and returns `nil` for a peer the service has no name for, which arrives unbound

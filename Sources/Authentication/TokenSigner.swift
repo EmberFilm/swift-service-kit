@@ -5,22 +5,14 @@
 //  Created by Zaid Rahhawi on 8/21/26.
 //
 
-import JWTKit
-
-/// Mints access tokens for the one service that holds the private key.
+/// Mints access tokens for the one service that holds the signing key.
 ///
-/// Every other service is configured with the matching public key and a ``TokenVerifier``,
-/// which reads a token but cannot produce one.
-public struct TokenSigner: Sendable {
-    private let keys: JWTKeyCollection
+/// Every other service is configured with the matching verifying key and a ``TokenVerifier``,
+/// which reads a token but cannot produce one. A protocol rather than a type so that the token
+/// format is a choice made once, in the composition root — `JWTAuthentication` ships the JWT
+/// one — and everything that mints a token is written against the payload it mints.
+public protocol TokenSigner<Payload>: Sendable {
+    associatedtype Payload: Sendable
 
-    public init(privateKey: EdDSA.PrivateKey) async {
-        let keys = JWTKeyCollection()
-        await keys.add(eddsa: privateKey)
-        self.keys = keys
-    }
-
-    public func sign(_ token: some JWTPayload) async throws -> String {
-        try await keys.sign(token)
-    }
+    func sign(_ payload: Payload) async throws -> String
 }

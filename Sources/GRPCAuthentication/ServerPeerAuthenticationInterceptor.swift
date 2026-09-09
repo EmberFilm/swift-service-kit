@@ -5,6 +5,7 @@
 //  Created by Zaid Rahhawi on 9/9/26.
 //
 
+import Authentication
 import GRPCCore
 import GRPCNIOTransportHTTP2Posix
 import X509
@@ -21,8 +22,9 @@ import X509
 /// this runs, so what remains is to say *who* it names: `identify` reads the certificate and
 /// returns the app's idea of a peer, or `nil` for a peer this service has no name for. The
 /// certificate's names are the transport's concern and the peer type is the app's, so neither
-/// is decided here. What a peer is then allowed to do is the destination's decision, made where
-/// the service is built — a certificate proves a credential, never a permission.
+/// is decided here. What is bound is a ``PeerAuthenticationContext``: the peer, and the
+/// certificate that named it. What a peer is then allowed to do is the destination's decision,
+/// made where the service is built — a certificate proves a credential, never a permission.
 ///
 /// A call with no certificate, or from a peer `identify` declines, arrives unbound rather than
 /// refused. That is the same split as the token interceptor: identifying a caller and requiring
@@ -34,7 +36,7 @@ import X509
 /// cannot see it. Only the Posix HTTP/2 transport exposes one; on any other transport every call
 /// arrives unbound.
 public struct ServerPeerAuthenticationInterceptor<Peer: Sendable>: ServerInterceptor {
-    private let peer: TaskLocal<Peer?>
+    private let peer: TaskLocal<PeerAuthenticationContext<Peer>?>
     private let identify: @Sendable (Certificate) -> Peer?
 
     /// - Parameters:
@@ -43,7 +45,7 @@ public struct ServerPeerAuthenticationInterceptor<Peer: Sendable>: ServerInterce
     ///   - identify: Names the peer from its leaf certificate, or returns `nil` for one this
     ///     service does not admit.
     public init(
-        peer: TaskLocal<Peer?>,
+        peer: TaskLocal<PeerAuthenticationContext<Peer>?>,
         identify: @escaping @Sendable (Certificate) -> Peer?
     ) {
         self.peer = peer
@@ -67,7 +69,9 @@ public struct ServerPeerAuthenticationInterceptor<Peer: Sendable>: ServerInterce
             return try await next(request, context)
         }
 
-        return try await peer.withValue(identified) {
+        let peerContext = PeerAuthenticationContext(peer: identified, certificate: certificate)
+
+        return try await peer.withValue(peerContext) {
             return try await next(request, context)
         }
     }

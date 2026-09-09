@@ -5,9 +5,10 @@
 //  Created by Zaid Rahhawi on 9/9/26.
 //
 
-/// What one call proved about its caller, bound to the task for the length of that call.
+/// What one call proved about the person behind it, bound to the task for the length of that call.
 ///
-/// The `Payload` is the verified token as the app declares it, and `token` is the encoded form
+/// The counterpart of ``PeerAuthenticationContext``, which is the same for a process and its
+/// certificate. The `Payload` is the verified token as the app declares it, and `token` is the encoded form
 /// that proved it. Both are carried because they serve different readers: a handler authorizes
 /// against the payload, and ``ClientTokenPropagationInterceptor`` resends the token when the handler
 /// calls another service as the same caller.
