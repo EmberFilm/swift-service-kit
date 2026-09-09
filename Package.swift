@@ -42,6 +42,7 @@ let package = Package(
         .package(url: "https://github.com/vapor/jwt-kit.git", "5.3.0"..<"5.7.0"),
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.1"),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.20.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.26.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird-auth.git", from: "2.2.0"),
     ],
@@ -78,7 +79,8 @@ let package = Package(
                 "Authentication",
                 .product(name: "JWTKit", package: "jwt-kit"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
-                .product(name: "GRPCNIOTransportHTTP2Posix", package: "grpc-swift-nio-transport")
+                .product(name: "GRPCNIOTransportHTTP2Posix", package: "grpc-swift-nio-transport"),
+                .product(name: "X509", package: "swift-certificates"),
             ]
         ),
         .target(

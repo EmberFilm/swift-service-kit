@@ -17,7 +17,7 @@ It holds no domain types. You bring your own claims, your own repositories, your
 | `PostgresPersistence` | PostgresNIO | the Postgres driver, plus row-level-security session variables |
 | `PersistenceTesting` | — | `MockDatabase` — a `Database` with no transaction and a fixed scope, for use-case tests |
 | `Authentication` | jwt-kit | `TokenSigner`, `TokenVerifier`, and `AuthenticationContext<Payload>` |
-| `GRPCAuthentication` | grpc-swift-2 | interceptors that bind the caller on the way in and resend the token on the way out |
+| `GRPCAuthentication` | grpc-swift-2, swift-certificates | interceptors that bind a person from their token or a process from its certificate on the way in, and resend the token on the way out |
 | `HTTPAuthentication` | hummingbird-auth | the same for Hummingbird |
 
 Link only what you use. `Persistence` and `Authentication` have no transport dependency at all, so
@@ -106,6 +106,32 @@ let caller = authentication.payload
 ```
 
 On the HTTP side, add `IsAuthenticatedMiddleware` to the protected routes.
+
+### A process, from its certificate
+
+A person proves who they are with a bearer token. A process proves it with the mTLS client
+certificate it presented at the handshake. Both are bound per call, independently, because a
+request can carry both — a service relaying a person's call arrives with its own certificate *and*
+the person's token:
+
+```swift
+enum Peer {
+    @TaskLocal static var current: ServicePrincipal?
+}
+
+ServerPeerAuthenticationInterceptor(peer: Peer.$current) { certificate in
+    ServicePrincipal(certificate: certificate)   // nil for a peer this service does not admit
+}
+```
+
+The transport has already checked that the certificate chains to the trust roots. `identify` says
+who it names, and returns `nil` for a peer the service has no name for, which arrives unbound
+rather than refused — the transport rejected the invalid ones, and an unlisted peer is a valid one
+this service simply does not admit. What a peer may then do is the destination's decision, made
+where the service is built: a certificate proves a credential, never a permission.
+
+Only the Posix HTTP/2 transport exposes the certificate; on any other transport every call arrives
+unbound.
 
 ### Calling onward as the same caller
 
