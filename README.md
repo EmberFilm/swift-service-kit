@@ -120,20 +120,29 @@ the person's token:
 
 ```swift
 enum Caller {
-    @TaskLocal static var service: PeerAuthenticationContext<ServicePrincipal>?
+    @TaskLocal static var service: PeerAuthenticationContext<SPIFFEID>?
 }
 
-ServerPeerAuthenticationInterceptor(peer: Caller.$service) { certificate in
-    ServicePrincipal(certificate: certificate)   // nil for a peer this service has no name for
-}
+ServerPeerAuthenticationInterceptor(
+    identifier: SPIFFEPeerIdentifier(trustDomain: "emberfilm"),
+    peer: Caller.$service
+)
 ```
 
-What is bound is a `PeerAuthenticationContext`, the counterpart of `UserAuthenticationContext`: the
-peer the app named, and the certificate that named it. A handler reads `Caller.service?.peer`.
+`PeerIdentifier` is the peer counterpart of `TokenVerifier`, and the only one there is: the
+transport verified the certificate at the handshake, a CA outside the process issued it, and the
+TLS client presents it on every connection unasked. What remains for the application is reading
+who it names. `SPIFFEPeerIdentifier` reads the `spiffe://<trust-domain>/<path>` URI subject
+alternative name; an app whose peers are richer than an ID wraps it in a `PeerIdentifier` of its
+own and maps the ID.
 
-The transport has already checked that the certificate chains to the trust roots. `identify` says
-who it names, and returns `nil` for a peer the service has no name for, which arrives unbound
-rather than refused — the transport rejected the invalid ones, and an unlisted peer is a valid one
+What is bound is a `PeerAuthenticationContext`, the counterpart of `UserAuthenticationContext`:
+the peer the identifier named, and the certificate that named it. A handler reads
+`Caller.service?.peer`.
+
+The transport has already checked that the certificate chains to the trust roots. The identifier
+says who it names, and returns `nil` for a peer it has no name for, which arrives unbound rather
+than refused — the transport rejected the invalid ones, and an unlisted peer is a valid one
 this service simply does not admit. What a peer may then do is the destination's decision, made
 where the service is built: a certificate proves a credential, never a permission.
 

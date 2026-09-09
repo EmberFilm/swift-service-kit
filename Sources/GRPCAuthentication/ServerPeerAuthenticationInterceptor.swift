@@ -8,7 +8,6 @@
 import Authentication
 import GRPCCore
 import GRPCNIOTransportHTTP2Posix
-import X509
 
 /// Identifies the process behind an RPC from its mTLS client certificate, without requiring one.
 ///
@@ -19,14 +18,14 @@ import X509
 /// person's token — and each binds its own task-local.
 ///
 /// The transport has already checked that the certificate chains to the trust roots by the time
-/// this runs, so what remains is to say *who* it names: `identify` reads the certificate and
-/// returns the app's idea of a peer, or `nil` for a peer this service has no name for. The
+/// this runs, so what remains is to say *who* it names: the ``PeerIdentifier`` reads the
+/// certificate and returns the app's idea of a peer, or `nil` for a peer it has no name for. The
 /// certificate's names are the transport's concern and the peer type is the app's, so neither
 /// is decided here. What is bound is a ``PeerAuthenticationContext``: the peer, and the
 /// certificate that named it. What a peer is then allowed to do is the destination's decision,
 /// made where the service is built — a certificate proves a credential, never a permission.
 ///
-/// A call with no certificate, or from a peer `identify` declines, arrives unbound rather than
+/// A call with no certificate, or from a peer the identifier declines, arrives unbound rather than
 /// refused. That is the same split as the token interceptor: identifying a caller and requiring
 /// one are not the same job, and the handler that needs a process insists on one. It is not the
 /// same as a token that fails to verify, which is refused: an unlisted certificate is a valid
@@ -36,20 +35,20 @@ import X509
 /// cannot see it. Only the Posix HTTP/2 transport exposes one; on any other transport every call
 /// arrives unbound.
 public struct ServerPeerAuthenticationInterceptor<Peer: Sendable>: ServerInterceptor {
+    private let identifier: any PeerIdentifier<Peer>
     private let peer: TaskLocal<PeerAuthenticationContext<Peer>?>
-    private let identify: @Sendable (Certificate) -> Peer?
 
     /// - Parameters:
-    ///   - peer: The app's task-local, bound for the length of each call whose certificate
-    ///     `identify` recognises.
-    ///   - identify: Names the peer from its leaf certificate, or returns `nil` for one this
-    ///     service does not admit.
+    ///   - identifier: Names the peer from its leaf certificate, or returns `nil` for one it has
+    ///     no name for.
+    ///   - peer: The app's task-local, bound for the length of each call whose certificate the
+    ///     identifier recognises.
     public init(
-        peer: TaskLocal<PeerAuthenticationContext<Peer>?>,
-        identify: @escaping @Sendable (Certificate) -> Peer?
+        identifier: any PeerIdentifier<Peer>,
+        peer: TaskLocal<PeerAuthenticationContext<Peer>?>
     ) {
+        self.identifier = identifier
         self.peer = peer
-        self.identify = identify
     }
 
     public func intercept<Input: Sendable, Output: Sendable>(
@@ -64,7 +63,7 @@ public struct ServerPeerAuthenticationInterceptor<Peer: Sendable>: ServerInterce
         guard
             let transport = context.transportSpecific as? HTTP2ServerTransport.Posix.Context,
             let certificate = transport.peerCertificate,
-            let identified = identify(certificate)
+            let identified = identifier.identify(certificate)
         else {
             return try await next(request, context)
         }

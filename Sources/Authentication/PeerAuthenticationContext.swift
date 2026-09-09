@@ -22,12 +22,13 @@ import X509
 ///
 /// ```swift
 /// enum Caller {
-///     @TaskLocal static var service: PeerAuthenticationContext<ServicePrincipal>?
+///     @TaskLocal static var service: PeerAuthenticationContext<SPIFFEID>?
 /// }
 ///
-/// ServerPeerAuthenticationInterceptor(peer: Caller.$service) { certificate in
-///     ServicePrincipal(certificate: certificate)
-/// }
+/// ServerPeerAuthenticationInterceptor(
+///     identifier: SPIFFEPeerIdentifier(trustDomain: "emberfilm"),
+///     peer: Caller.$service
+/// )
 /// ```
 ///
 /// A request can carry both a certificate and a token — a service relaying a person's call — so
