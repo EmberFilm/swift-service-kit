@@ -28,6 +28,10 @@ let package = Package(
             targets: ["JWTAuthentication"]
         ),
         .library(
+            name: "SPIFFEAuthentication",
+            targets: ["SPIFFEAuthentication"]
+        ),
+        .library(
             name: "GRPCAuthentication",
             targets: ["GRPCAuthentication"]
         ),
@@ -83,6 +87,15 @@ let package = Package(
             dependencies: [
                 "Authentication",
                 .product(name: "JWTKit", package: "jwt-kit"),
+            ]
+        ),
+        // The SPIFFE implementation of the peer identifier. The one place the kit knows what a
+        // workload identity looks like on a certificate.
+        .target(
+            name: "SPIFFEAuthentication",
+            dependencies: [
+                "Authentication",
+                .product(name: "X509", package: "swift-certificates"),
             ]
         ),
         // Binds both callers: the person from the bearer token, the process from the mTLS

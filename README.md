@@ -132,7 +132,8 @@ ServerPeerAuthenticationInterceptor(
 `PeerIdentifier` is the peer counterpart of `TokenVerifier`, and the only one there is: the
 transport verified the certificate at the handshake, a CA outside the process issued it, and the
 TLS client presents it on every connection unasked. What remains for the application is reading
-who it names. `SPIFFEPeerIdentifier` reads the `spiffe://<trust-domain>/<path>` URI subject
+who it names. `SPIFFEAuthentication` ships `SPIFFEPeerIdentifier`, which reads the
+`spiffe://<trust-domain>/<path>` URI subject
 alternative name; an app whose peers are richer than an ID wraps it in a `PeerIdentifier` of its
 own and maps the ID.
 

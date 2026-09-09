@@ -18,7 +18,7 @@ import X509
 /// and this is that one operation.
 ///
 /// A protocol rather than a closure so that an identification scheme is a named thing the
-/// composition root picks — ``SPIFFEPeerIdentifier`` is the one the kit ships — and so the peer
+/// composition root picks — `SPIFFEAuthentication` ships `SPIFFEPeerIdentifier` — and so the peer
 /// interceptor takes `any PeerIdentifier<Peer>` the way the token interceptor takes
 /// `any TokenVerifier<Payload>`.
 public protocol PeerIdentifier<Peer>: Sendable {
