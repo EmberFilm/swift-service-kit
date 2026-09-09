@@ -16,14 +16,6 @@ let package = Package(
             targets: ["PostgresPersistence"]
         ),
         .library(
-            name: "PersistenceTesting",
-            targets: ["PersistenceTesting"]
-        ),
-        .library(
-            name: "AuthenticationTesting",
-            targets: ["AuthenticationTesting"]
-        ),
-        .library(
             name: "UserAuthentication",
             targets: ["UserAuthentication"]
         ),
@@ -79,12 +71,6 @@ let package = Package(
                 .product(name: "PostgresNIO", package: "postgres-nio"),
             ]
         ),
-        // For a use-case test: a `Database` with no transaction and a fixed scope. Its own product
-        // so a service's core target never links it by accident.
-        .target(
-            name: "PersistenceTesting",
-            dependencies: ["Persistence"]
-        ),
         // The shapes for a person: what a signer and a verifier are, the context a call binds, and
         // the `ServiceContext` key it is bound under. Depends on nothing but swift-service-context,
         // itself dependency-free, so a domain target links it without pulling a token library or
@@ -104,12 +90,6 @@ let package = Package(
                 .product(name: "ServiceContextModule", package: "swift-service-context"),
                 .product(name: "X509", package: "swift-certificates"),
             ]
-        ),
-        // For a handler test: a verifier that answers from a table instead of a key. Its own
-        // product so a service's production targets never link it by accident.
-        .target(
-            name: "AuthenticationTesting",
-            dependencies: ["UserAuthentication"]
         ),
         // The JWT implementation of the signer and verifier, over jwt-kit. The one place the kit
         // knows what a token looks like on the wire.

@@ -15,10 +15,8 @@ It holds no domain types. You bring your own claims, your own repositories, your
 | --- | --- | --- |
 | `Persistence` | — | `Database` — the transaction boundary and the scope it hands over |
 | `PostgresPersistence` | PostgresNIO | the Postgres driver, plus row-level-security session variables |
-| `PersistenceTesting` | — | `MockDatabase` — a `Database` with no transaction and a fixed scope, for use-case tests |
 | `UserAuthentication` | swift-service-context | the `TokenSigner` and `TokenVerifier` protocols, `UserAuthenticationContext<Payload>`, and the `ServiceContext` key it is bound under, for a person |
 | `PeerAuthentication` | swift-service-context, swift-certificates | the `PeerIdentifier` protocol, `PeerAuthenticationContext<Peer>`, and its key, for a process |
-| `AuthenticationTesting` | — | `MockTokenVerifier` — a `TokenVerifier` that answers from a table, for handler tests |
 | `JWTAuthentication` | jwt-kit | `JWTTokenSigner` and `JWTTokenVerifier`, the JWT implementation of the two protocols |
 | `SPIFFEAuthentication` | swift-certificates | `SPIFFEID` and `SPIFFEPeerIdentifier`, the SPIFFE implementation of the identifier |
 | `GRPCAuthentication` | grpc-swift-2 | interceptors that bind a person from their token on the way in and resend it on the way out; any transport |
@@ -177,14 +175,9 @@ rather than failing. A process identifies itself on such calls with its certific
 
 ### Testing a handler
 
-`AuthenticationTesting` ships `MockTokenVerifier`, a `TokenVerifier` over a table, so a handler
-test sends `Bearer admin-token` and never mints a key:
-
-```swift
-let verifier = MockTokenVerifier(["admin-token": AppToken(role: .admin)])
-```
-
-A use-case test that needs a bound caller uses the standard API:
+`TokenVerifier` is a one-method protocol, so a handler test conforms a table to it and sends
+`Bearer admin-token` without minting a key. A use-case test that needs a bound caller uses the
+standard API:
 
 ```swift
 var context = ServiceContext.topLevel
@@ -224,15 +217,9 @@ package struct PostgresAppScope: PostgresScope, PublishPostUseCaseScope {
 }
 ```
 
-The connection never leaves the scope. Substituting a fake needs no seam invented for testing —
-`PersistenceTesting` ships one:
-
-```swift
-import PersistenceTesting
-
-let database = MockDatabase(scope: MockAppScope(postRepository: repository))
-try await PublishPostUseCase(database: database)(input: input)
-```
+The connection never leaves the scope. Substituting a fake needs no seam invented for testing:
+`Database` is one method, so a test conforms a type that hands every unit of work the same scope
+and no transaction, and asserts against the repositories it built that scope from.
 
 ### Why there is no connection path
 
